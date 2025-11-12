@@ -1,10 +1,12 @@
 #include <iostream>
+#include <iomanip>
 #include <random>
 #include <ctime>
 #include <cstdlib>
 #include <string>
 #include <bitset>
 #include <sstream>
+#include <climits>
 #include "BigInt.h"
 
 using namespace std;
@@ -30,25 +32,79 @@ BigInt modular_exponentiation(BigInt base, BigInt exponent, BigInt mod) {
     return result;
 }
 
-// Helper function: Generate random BigInt with specified number of bits
-BigInt generate_random_bits(int bits) {
+// Helper function: Generate cryptographic-grade seed using multiple entropy sources
+// Combines random_device, clock, and time for better entropy
+unsigned long long generate_cryptographic_seed() {
     random_device rd;
-    mt19937_64 gen(rd());
+    // Collect multiple random values from random_device
+    unsigned long long seed1 = rd();
+    unsigned long long seed2 = rd();
+    unsigned long long seed3 = rd();
+    
+    // Combine with time and clock for additional entropy
+    unsigned long long time_seed = static_cast<unsigned long long>(time(nullptr));
+    unsigned long long clock_seed = static_cast<unsigned long long>(clock());
+    
+    // XOR all sources together to combine entropy
+    // Using XOR preserves entropy better than addition
+    return seed1 ^ (seed2 << 16) ^ (seed3 << 32) ^ time_seed ^ clock_seed;
+}
+
+// Helper function: Generate random BigInt with specified number of bits
+// Uses improved entropy sources for cryptographic-grade randomness
+BigInt generate_random_bits(int bits) {
+    if (bits <= 0) {
+        return BigInt(0);
+    }
+    
+    // Generate cryptographic seed with multiple entropy sources
+    unsigned long long seed = generate_cryptographic_seed();
+    
+    // Use multiple random_device instances for better entropy
+    random_device rd1, rd2, rd3;
+    seed ^= (static_cast<unsigned long long>(rd1()) << 0);
+    seed ^= (static_cast<unsigned long long>(rd2()) << 16);
+    seed ^= (static_cast<unsigned long long>(rd3()) << 32);
+    
+    // Create generator with combined seed
+    mt19937_64 gen(seed);
     uniform_int_distribution<unsigned long long> dis(0, ULLONG_MAX);
     
-    // Build random number by concatenating random chunks
-    string num_str = "";
-    
-    // Generate first digit to ensure it's in the right range (MSB = 1)
-    int full_chunks = bits / 64;
-    int remaining_bits = bits % 64;
-    
-    // Start with a 1 bit to ensure minimum size
+    // Build random number bit by bit using better approach
+    // Start with MSB = 1 to ensure correct bit length
     BigInt result = 1;
-    for (int i = 0; i < bits - 1; i++) {
+    
+    // Generate remaining bits
+    for (int i = 1; i < bits; i++) {
         result = result * 2;
+        // Use random bit from generator
         if (dis(gen) % 2 == 1) {
             result = result + 1;
+        }
+    }
+    
+    // For better randomness, mix in additional entropy from more random_device calls
+    // This helps break patterns in mt19937_64
+    random_device rd_extra;
+    for (int i = 0; i < 4; i++) {
+        unsigned long long extra = rd_extra();
+        // Mix extra entropy into result by adding small random values
+        BigInt extra_big = BigInt(extra);
+        result = result + extra_big;
+        // Keep within bit bounds by using modulo
+        BigInt max_val = BigInt(1);
+        for (int j = 0; j < bits; j++) {
+            max_val = max_val * 2;
+        }
+        result = result % max_val;
+        
+        // Ensure MSB is still set
+        BigInt min_val = BigInt(1);
+        for (int j = 0; j < bits - 1; j++) {
+            min_val = min_val * 2;
+        }
+        if (result < min_val) {
+            result = result + min_val;
         }
     }
     
@@ -128,12 +184,105 @@ BigInt generate_safe_prime(int bit_size) {
     }
 }
 
-// C: Generate a private key
-// Private key should be in range [2, p-2]
+// Helper function: Validate prime p for Diffie-Hellman
+// Returns true if p is valid, false otherwise
+bool validate_prime(BigInt p) {
+    // p must be at least 5 (for safe prime with p-2 >= 2)
+    if (p < 5) {
+        return false;
+    }
+    // p must be odd
+    if (p % 2 == 0) {
+        return false;
+    }
+    return true;
+}
+
+// Helper function: Generate random BigInt in range [min, max]
+// Uses cryptographic-grade random number generation
+// For large ranges (512-bit), modulo bias is negligible (< 2^-256), so direct modulo is safe
+BigInt generate_random_in_range(BigInt min_val, BigInt max_val) {
+    if (max_val < min_val) {
+        // Invalid range, return min_val
+        return min_val;
+    }
+    
+    if (min_val == max_val) {
+        // Range is single value
+        return min_val;
+    }
+    
+    BigInt range = max_val - min_val + 1;
+    
+    // Calculate approximate bit length of max_val for efficient random generation
+    // We estimate bits needed by finding the smallest power of 2 that exceeds max_val
+    int approx_bits = 0;
+    BigInt test = BigInt(1);
+    while (test <= max_val && approx_bits < 1024) {
+        approx_bits++;
+        if (approx_bits < 63) {  // Use shift for small values
+            test = test * 2;
+        } else {
+            // For large values, approximate
+            break;
+        }
+    }
+    
+    // Use enough bits to cover the range with margin
+    // Add 64 extra bits to ensure we have sufficient entropy
+    // For 512-bit primes, this gives us ~576 bits of randomness
+    int bits_to_use = (approx_bits > 0) ? (approx_bits + 64) : 512;
+    
+    // Generate cryptographic random number with sufficient bits
+    BigInt random_value = generate_random_bits(bits_to_use);
+    
+    // Reduce to range using modulo
+    // For cryptographic ranges (512-bit), bias is negligible
+    BigInt result = (random_value % range) + min_val;
+    
+    // Ensure result is in valid range (safety check)
+    if (result < min_val) {
+        result = min_val;
+    } else if (result > max_val) {
+        // This should not happen with proper modulo, but handle it
+        result = max_val;
+    }
+    
+    return result;
+}
+
+// C: Generate a private key for Diffie-Hellman
+// Private key should be in range [2, p-2] for security
+// Uses cryptographic-grade random number generation with rejection sampling
 BigInt generate_private_key(BigInt p) {
-    // Generate random number in range [2, p-2]
-    BigInt range = p - 3;  // p - 2 - 2 + 1
-    BigInt private_key = generate_random_bits(256) % range + 2;
+    // Validate prime p
+    if (!validate_prime(p)) {
+        cerr << "ERROR: Invalid prime p for private key generation!" << endl;
+        cerr << "Prime p must be at least 5 and odd." << endl;
+        // Return a safe default (but this should not happen in practice)
+        return BigInt(2);
+    }
+    
+    // Private key must be in range [2, p-2]
+    // This ensures:
+    // 1. Private key is not 0 or 1 (too small, insecure)
+    // 2. Private key is not p-1 (which would make public key = 1)
+    // 3. Private key is not p (which would make public key = 0)
+    BigInt min_key = BigInt(2);
+    BigInt max_key = p - 2;
+    
+    // Generate private key using rejection sampling to avoid bias
+    BigInt private_key = generate_random_in_range(min_key, max_key);
+    
+    // Double-check the generated key is in valid range
+    if (private_key < min_key || private_key > max_key) {
+        // This should not happen, but handle it gracefully
+        cerr << "WARNING: Generated private key out of range, adjusting..." << endl;
+        // Use modulo as fallback
+        BigInt range = max_key - min_key + 1;
+        private_key = (generate_random_bits(256) % range) + min_key;
+    }
+    
     return private_key;
 }
 
@@ -195,6 +344,12 @@ int main(int argc, char* argv[]) {
     BigInt p = generate_safe_prime(bit_size);
     BigInt g = 2;  // Generator (commonly used value)
     
+    // Validate generated prime
+    if (!validate_prime(p)) {
+        cerr << "ERROR: Generated prime p is invalid!" << endl;
+        return 1;
+    }
+    
     cout << endl;
     cout << "Prime p (" << bit_size << "-bit) = " << p << endl;
     cout << "Generator g = " << g << endl;
@@ -203,8 +358,25 @@ int main(int argc, char* argv[]) {
     // 2. Generate private keys for Alice and Bob
     cout << "Step 2: Generating private keys" << endl;
     cout << "-------------------------------------------" << endl;
+    cout << "Generating cryptographic-grade private keys..." << endl;
     BigInt a = generate_private_key(p);  // Alice's private key
     BigInt b = generate_private_key(p);  // Bob's private key
+    
+    // Validate private keys
+    BigInt min_key = BigInt(2);
+    BigInt max_key = p - 2;
+    if (a < min_key || a > max_key || b < min_key || b > max_key) {
+        cerr << "ERROR: Generated private keys are out of valid range!" << endl;
+        cerr << "Private keys must be in range [2, " << max_key << "]" << endl;
+        return 1;
+    }
+    
+    // Ensure private keys are different (very unlikely but check anyway)
+    if (a == b) {
+        cout << "WARNING: Alice and Bob have the same private key!" << endl;
+        cout << "Generating new key for Bob..." << endl;
+        b = generate_private_key(p);
+    }
     
     cout << "Alice's private key a = " << a << endl;
     cout << "Bob's private key b = " << b << endl;

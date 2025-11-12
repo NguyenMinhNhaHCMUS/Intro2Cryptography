@@ -1,6 +1,5 @@
 // Fast Fourier transform
 // https://cp-algorithms.com/algebra/fft.html
-// https://drive.google.com/file/d/1B9BIfATnI_qL6rYiE5hY9bh20SMVmHZ7/view
 // Reference: https://github.com/indy256/codelibrary/tree/main/cpp/numeric
 
 #ifndef FFT_HPP
