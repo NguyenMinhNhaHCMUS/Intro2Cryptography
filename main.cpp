@@ -11,7 +11,7 @@
 
 using namespace std;
 
-// A: Modular exponentiation function
+// AModular exponentiation function
 // Computes (base^exponent) % mod efficiently using binary exponentiation + sliding window
 // This handles large numbers using BigInt for 512+ bit arithmetic
 BigInt modular_exponentiation(BigInt base, BigInt exponent,const BigInt& mod) {
@@ -83,8 +83,8 @@ BigInt modular_exponentiation(BigInt base, BigInt exponent,const BigInt& mod) {
     return result;
 }
 
-// Helper function: Generate cryptographic-grade seed using multiple entropy sources
-// Combines random_device, clock, and time for better entropy
+// Generate seed using multiple entropy sources
+
 unsigned long long generate_cryptographic_seed() {
     random_device rd;
     // Collect multiple random values from random_device
@@ -101,8 +101,7 @@ unsigned long long generate_cryptographic_seed() {
     return seed1 ^ (seed2 << 16) ^ (seed3 << 32) ^ time_seed ^ clock_seed;
 }
 
-// Helper function: Generate random BigInt with specified number of bits
-// Uses improved entropy sources for cryptographic-grade randomness
+//Generate random BigInt with specified number of bits
 BigInt generate_random_bits(int bits) {
     if (bits <= 0) {
         return BigInt(0);
@@ -121,7 +120,7 @@ BigInt generate_random_bits(int bits) {
     mt19937_64 gen(seed);
     uniform_int_distribution<unsigned long long> dis(0, ULLONG_MAX);
     
-    // Build random number bit by bit using better approach
+    // Build random number bit by bit
     // Start with MSB = 1 to ensure correct bit length
     BigInt result = 1;
     
@@ -134,8 +133,6 @@ BigInt generate_random_bits(int bits) {
         }
     }
     
-    // For better randomness, mix in additional entropy from more random_device calls
-    // This helps break patterns in mt19937_64
     random_device rd_extra;
     for (int i = 0; i < 4; i++) {
         unsigned long long extra = rd_extra();
@@ -148,8 +145,7 @@ BigInt generate_random_bits(int bits) {
             max_val = max_val * 2;
         }
         result = result % max_val;
-        
-        // Ensure MSB is still set
+
         BigInt min_val = BigInt(1);
         for (int j = 0; j < bits - 1; j++) {
             min_val = min_val * 2;
@@ -162,8 +158,7 @@ BigInt generate_random_bits(int bits) {
     return result;
 }
 
-// Helper function: Miller-Rabin primality test for BigInt
-// Returns true if n is probably prime, false if definitely composite
+// Miller-Rabin primality test for BigInt
 bool miller_rabin_test(BigInt n, int k = 20) {
     if (n == 2 || n == 3) return true;
     if (n < 2 || n % 2 == 0) return false;
@@ -181,7 +176,6 @@ bool miller_rabin_test(BigInt n, int k = 20) {
     mt19937_64 gen(rd());
     
     for (int i = 0; i < k; i++) {
-        // Generate random witness a in range [2, n-2]
         BigInt a = generate_random_bits(32) % (n - 3) + 2;
         BigInt x = modular_exponentiation(a, d, n);
         
@@ -204,9 +198,9 @@ bool miller_rabin_test(BigInt n, int k = 20) {
     return true;
 }
 
-// B: Generate a safe prime number of specified bit size
-// A safe prime is a prime p where (p-1)/2 is also prime (Sophie Germain prime)
-// Minimum 512 bits as required
+// Generate a safe prime number of specified bit size
+// A safe prime is a prime p where (p-1)/2 is also prime
+// Minimum 512 bits 
 BigInt generate_safe_prime(int bit_size) {
     cout << "Generating " << bit_size << "-bit safe prime (this may take several minutes)..." << endl;
     
@@ -220,10 +214,10 @@ BigInt generate_safe_prime(int bit_size) {
         // Generate random odd number of bit_size bits
         BigInt q = generate_random_bits(bit_size - 1);
         if (q % 2 == 0) {
-            q = q + 1;  // Make it odd
+            q = q + 1;
         }
         
-        // Check if q is prime (Sophie Germain prime)
+        // Check if q is prime
         if (miller_rabin_test(q)) {
             // Check if p = 2q + 1 is also prime (safe prime)
             BigInt p = q * 2 + 1;
@@ -235,8 +229,6 @@ BigInt generate_safe_prime(int bit_size) {
     }
 }
 
-// Helper function: Validate prime p for Diffie-Hellman
-// Returns true if p is valid, false otherwise
 bool validate_prime(BigInt p) {
     // p must be at least 5 (for safe prime with p-2 >= 2)
     if (p < 5) {
@@ -249,9 +241,7 @@ bool validate_prime(BigInt p) {
     return true;
 }
 
-// Helper function: Generate random BigInt in range [min, max]
-// Uses cryptographic-grade random number generation
-// For large ranges (512-bit), modulo bias is negligible (< 2^-256), so direct modulo is safe
+//Generate random BigInt in range [min, max]
 BigInt generate_random_in_range(BigInt min_val, BigInt max_val) {
     if (max_val < min_val) {
         // Invalid range, return min_val
@@ -265,8 +255,6 @@ BigInt generate_random_in_range(BigInt min_val, BigInt max_val) {
     
     BigInt range = max_val - min_val + 1;
     
-    // Calculate approximate bit length of max_val for efficient random generation
-    // We estimate bits needed by finding the smallest power of 2 that exceeds max_val
     int approx_bits = 0;
     BigInt test = BigInt(1);
     while (test <= max_val && approx_bits < 1024) {
@@ -274,62 +262,45 @@ BigInt generate_random_in_range(BigInt min_val, BigInt max_val) {
         if (approx_bits < 63) {  // Use shift for small values
             test = test * 2;
         } else {
-            // For large values, approximate
+
             break;
         }
     }
     
-    // Use enough bits to cover the range with margin
-    // Add 64 extra bits to ensure we have sufficient entropy
-    // For 512-bit primes, this gives us ~576 bits of randomness
     int bits_to_use = (approx_bits > 0) ? (approx_bits + 64) : 512;
-    
-    // Generate cryptographic random number with sufficient bits
+
     BigInt random_value = generate_random_bits(bits_to_use);
     
-    // Reduce to range using modulo
-    // For cryptographic ranges (512-bit), bias is negligible
     BigInt result = (random_value % range) + min_val;
-    
-    // Ensure result is in valid range (safety check)
+
     if (result < min_val) {
         result = min_val;
     } else if (result > max_val) {
-        // This should not happen with proper modulo, but handle it
+
         result = max_val;
     }
     
     return result;
 }
 
-// C: Generate a private key for Diffie-Hellman
-// Private key should be in range [2, p-2] for security
-// Uses cryptographic-grade random number generation with rejection sampling
+// Generate a private key for Diffie-Hellman
 BigInt generate_private_key(BigInt p) {
     // Validate prime p
     if (!validate_prime(p)) {
         cerr << "ERROR: Invalid prime p for private key generation!" << endl;
         cerr << "Prime p must be at least 5 and odd." << endl;
-        // Return a safe default (but this should not happen in practice)
         return BigInt(2);
     }
     
     // Private key must be in range [2, p-2]
-    // This ensures:
-    // 1. Private key is not 0 or 1 (too small, insecure)
-    // 2. Private key is not p-1 (which would make public key = 1)
-    // 3. Private key is not p (which would make public key = 0)
     BigInt min_key = BigInt(2);
     BigInt max_key = p - 2;
     
     // Generate private key using rejection sampling to avoid bias
     BigInt private_key = generate_random_in_range(min_key, max_key);
-    
-    // Double-check the generated key is in valid range
+
     if (private_key < min_key || private_key > max_key) {
-        // This should not happen, but handle it gracefully
-        cerr << "WARNING: Generated private key out of range, adjusting..." << endl;
-        // Use modulo as fallback
+        //cerr << "WARNING: Generated private key out of range, adjusting..." << endl;
         BigInt range = max_key - min_key + 1;
         private_key = (generate_random_bits(256) % range) + min_key;
     }
@@ -343,9 +314,7 @@ int main(int argc, char* argv[]) {
     cout << "     DIFFIE-HELLMAN KEY EXCHANGE - IMPLEMENTATION" << endl;
     cout << "================================================================" << endl;
     cout << endl;
-    
-    // Determine bit size from command line or use default
-    int bit_size = 512;  // Default: 512-bit as required
+    int bit_size = 512; 
     
     if (argc > 1) {
         bit_size = atoi(argv[1]);
@@ -356,7 +325,7 @@ int main(int argc, char* argv[]) {
             return 1;
         }
     } else {
-        // Interactive menu
+
         cout << "Select bit size for testing:" << endl;
         cout << "  1. 64-bit" << endl;
         cout << "  2. 128-bit" << endl;
@@ -469,7 +438,6 @@ int main(int argc, char* argv[]) {
         cout << "symmetric encryption (e.g., AES) to communicate securely." << endl;
     } else {
         cout << "ERROR! The shared secrets do not match." << endl;
-        cout << "Something went wrong in the key exchange!" << endl;
     }
     
     cout << endl;
