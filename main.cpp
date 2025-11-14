@@ -358,10 +358,10 @@ int main(int argc, char* argv[]) {
     } else {
         // Interactive menu
         cout << "Select bit size for testing:" << endl;
-        cout << "  1. 64-bit   (fast, for quick testing)" << endl;
-        cout << "  2. 128-bit  (moderate, for testing)" << endl;
-        cout << "  3. 256-bit  (slower, more secure)" << endl;
-        cout << "  4. 512-bit  (REQUIRED for submission, very slow)" << endl;
+        cout << "  1. 64-bit" << endl;
+        cout << "  2. 128-bit" << endl;
+        cout << "  3. 256-bit" << endl;
+        cout << "  4. 512-bit" << endl;
         cout << endl;
         cout << "Enter choice (1-4) [default: 4]: ";
         
@@ -384,9 +384,6 @@ int main(int argc, char* argv[]) {
     }
     
     cout << "Using " << bit_size << "-bit prime" << endl;
-    if (bit_size < 512) {
-        cout << "WARNING: For final submission, use 512-bit!" << endl;
-    }
     cout << endl;
     
     // 1. Generate safe prime p and generator g
